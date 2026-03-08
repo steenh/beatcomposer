@@ -1,0 +1,135 @@
+import type { Pattern, Track } from '../sequencer/types';
+
+const TRACK_COLORS: Record<string, string> = {
+  'kick': '#ff4466',
+  'snare': '#ff8800',
+  'clap': '#ffcc00',
+  'hihat-closed': '#00ccff',
+  'hihat-open': '#00ffaa',
+  'cymbal': '#aa88ff',
+  'bass': '#ff44aa',
+  'lead': '#44ffcc',
+  'pad': '#8844ff',
+};
+
+export class StepGrid {
+  element: HTMLElement;
+  private stepButtons: Map<string, HTMLButtonElement[]> = new Map(); // trackId -> buttons
+  private currentPlayhead = -1;
+  private stepClickCallback?: (trackId: string, stepIndex: number) => void;
+  private pattern: Pattern | null = null;
+
+  constructor() {
+    this.element = document.createElement('div');
+    this.element.className = 'step-grid-wrapper';
+  }
+
+  setPattern(pattern: Pattern): void {
+    this.pattern = pattern;
+    this.element.innerHTML = '';
+    this.stepButtons.clear();
+
+    const grid = document.createElement('div');
+    grid.className = 'step-grid';
+    grid.style.gridTemplateColumns = `repeat(${pattern.stepCount}, 1fr)`;
+
+    // Column headers (beat markers)
+    const headerRow = document.createElement('div');
+    headerRow.className = 'step-grid-header';
+    for (let i = 0; i < pattern.stepCount; i++) {
+      const marker = document.createElement('div');
+      marker.className = 'beat-marker-header';
+      if (i % 4 === 0) {
+        marker.textContent = String(Math.floor(i / 4) + 1);
+        marker.classList.add('beat-number');
+      }
+      headerRow.appendChild(marker);
+    }
+    this.element.appendChild(headerRow);
+
+    for (const track of pattern.tracks) {
+      const buttons: HTMLButtonElement[] = [];
+
+      for (let i = 0; i < pattern.stepCount; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'step-btn';
+
+        const step = track.steps[i];
+        if (step?.active) {
+          btn.classList.add('active');
+          btn.style.setProperty('--step-color', TRACK_COLORS[track.type] || '#e2e8f0');
+        }
+
+        if (i % 4 === 0) btn.classList.add('beat-start');
+        if (i % 2 === 0) btn.classList.add('even-step');
+
+        const trackId = track.id;
+        const stepIndex = i;
+        btn.addEventListener('click', () => {
+          this.stepClickCallback?.(trackId, stepIndex);
+        });
+
+        // Right-click for velocity
+        btn.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          // Could open velocity editor - for now just toggle
+        });
+
+        grid.appendChild(btn);
+        buttons.push(btn);
+      }
+
+      this.stepButtons.set(track.id, buttons);
+    }
+
+    this.element.appendChild(grid);
+
+    // Re-apply playhead if needed
+    if (this.currentPlayhead >= 0) {
+      this.setCurrentStep(this.currentPlayhead);
+    }
+  }
+
+  updateTrackSteps(track: Track): void {
+    const buttons = this.stepButtons.get(track.id);
+    if (!buttons) return;
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const step = track.steps[i];
+      const wasPlayhead = btn.classList.contains('playhead');
+      btn.className = 'step-btn';
+      if (i % 4 === 0) btn.classList.add('beat-start');
+      if (i % 2 === 0) btn.classList.add('even-step');
+      if (step?.active) {
+        btn.classList.add('active');
+        btn.style.setProperty('--step-color', TRACK_COLORS[track.type] || '#e2e8f0');
+      }
+      if (wasPlayhead) btn.classList.add('playhead');
+    }
+  }
+
+  setCurrentStep(step: number): void {
+    // Remove old playhead
+    if (this.currentPlayhead >= 0) {
+      this.stepButtons.forEach(buttons => {
+        if (this.currentPlayhead < buttons.length) {
+          buttons[this.currentPlayhead].classList.remove('playhead');
+        }
+      });
+    }
+
+    this.currentPlayhead = step;
+
+    if (step >= 0) {
+      this.stepButtons.forEach(buttons => {
+        if (step < buttons.length) {
+          buttons[step].classList.add('playhead');
+        }
+      });
+    }
+  }
+
+  onStepClick(cb: (trackId: string, stepIndex: number) => void): void {
+    this.stepClickCallback = cb;
+  }
+}
