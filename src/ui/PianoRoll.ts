@@ -1,4 +1,5 @@
 import type { Track, PianoRollNote } from '../sequencer/types';
+import { isNoteInScale, snapToScale, KEY_NAMES, SCALE_NAMES } from '../sequencer/scaleUtils';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BLACK_KEYS = new Set([1, 3, 6, 8, 10]); // indices within octave
@@ -29,6 +30,11 @@ export class PianoRoll {
   private dragStartStep = 0;
   private dragStartDuration = 0;
 
+  private scaleKey = 0;
+  private scaleName = 'natural minor';
+  private snapEnabled = false;
+  private scaleHeaderEl!: HTMLElement;
+
   private notesContainer!: HTMLElement;
   private playheadEl!: HTMLElement;
   private canvas!: HTMLCanvasElement;
@@ -47,6 +53,12 @@ export class PianoRoll {
     topBar.className = 'pr-topbar';
     topBar.textContent = 'PIANO ROLL — click to add notes, right-click to remove';
     this.element.appendChild(topBar);
+
+    // Scale header
+    this.scaleHeaderEl = document.createElement('div');
+    this.scaleHeaderEl.className = 'piano-roll-header';
+    this.buildScaleHeader();
+    this.element.appendChild(this.scaleHeaderEl);
 
     // Main area
     const mainArea = document.createElement('div');
@@ -171,6 +183,66 @@ export class PianoRoll {
     }
   }
 
+  private buildScaleHeader(): void {
+    this.scaleHeaderEl.innerHTML = '';
+
+    const keyLabel = document.createElement('span');
+    keyLabel.className = 'transport-label';
+    keyLabel.textContent = 'KEY:';
+    this.scaleHeaderEl.appendChild(keyLabel);
+
+    const keySelect = document.createElement('select');
+    keySelect.className = 'key-select';
+    KEY_NAMES.forEach((name, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = name;
+      if (i === this.scaleKey) opt.selected = true;
+      keySelect.appendChild(opt);
+    });
+    keySelect.addEventListener('change', () => {
+      this.scaleKey = parseInt(keySelect.value);
+      this.drawGrid();
+    });
+    this.scaleHeaderEl.appendChild(keySelect);
+
+    const scaleLabel = document.createElement('span');
+    scaleLabel.className = 'transport-label';
+    scaleLabel.textContent = 'SCALE:';
+    this.scaleHeaderEl.appendChild(scaleLabel);
+
+    const scaleSelect = document.createElement('select');
+    scaleSelect.className = 'scale-select';
+    SCALE_NAMES.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      if (name === this.scaleName) opt.selected = true;
+      scaleSelect.appendChild(opt);
+    });
+    scaleSelect.addEventListener('change', () => {
+      this.scaleName = scaleSelect.value;
+      this.drawGrid();
+    });
+    this.scaleHeaderEl.appendChild(scaleSelect);
+
+    const snapBtn = document.createElement('button');
+    snapBtn.className = 'btn-snap' + (this.snapEnabled ? ' active' : '');
+    snapBtn.textContent = 'SNAP';
+    snapBtn.addEventListener('click', () => {
+      this.snapEnabled = !this.snapEnabled;
+      snapBtn.classList.toggle('active', this.snapEnabled);
+    });
+    this.scaleHeaderEl.appendChild(snapBtn);
+  }
+
+  setScale(key: number, scale: string): void {
+    this.scaleKey = key;
+    this.scaleName = scale;
+    this.buildScaleHeader();
+    this.drawGrid();
+  }
+
   private drawGrid(): void {
     const ctx = this.canvas.getContext('2d')!;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -181,8 +253,13 @@ export class PianoRoll {
       const isBlack = BLACK_KEYS.has(noteInOctave);
       const y = row * KEY_HEIGHT;
 
-      // Row background
-      ctx.fillStyle = isBlack ? '#12121e' : '#1a1a2e';
+      // Row background — darken non-scale notes
+      const inScale = isNoteInScale(pitch, this.scaleKey, this.scaleName);
+      if (inScale) {
+        ctx.fillStyle = isBlack ? '#12121e' : '#1a1a2e';
+      } else {
+        ctx.fillStyle = '#0a0a12';
+      }
       ctx.fillRect(0, y, this.canvas.width, KEY_HEIGHT);
 
       // C note line
@@ -260,11 +337,14 @@ export class PianoRoll {
         this.dragStartStep = existingNote.step;
       }
     } else {
-      // Add new note
+      // Add new note (snap pitch to scale if enabled)
+      const snappedPitch = this.snapEnabled
+        ? snapToScale(pitch, this.scaleKey, this.scaleName)
+        : pitch;
       const newNote: PianoRollNote = {
         id: generateId(),
         step,
-        pitch,
+        pitch: snappedPitch,
         duration: 1,
         velocity: 100,
       };

@@ -8,6 +8,7 @@ import { TrackPanel } from './TrackPanel';
 import { StepGrid } from './StepGrid';
 import { PianoRoll } from './PianoRoll';
 import { Arranger } from './Arranger';
+import { SynthEditor } from './SynthEditor';
 
 export class App {
   element: HTMLElement;
@@ -17,6 +18,7 @@ export class App {
   private stepGrid: StepGrid;
   private pianoRoll: PianoRoll;
   private arranger: Arranger;
+  private synthEditor: SynthEditor;
   private sequencerArea!: HTMLElement;
   private pianoRollVisible = false;
   private activeTrackId: string | null = null;
@@ -36,6 +38,7 @@ export class App {
     this.stepGrid = new StepGrid();
     this.pianoRoll = new PianoRoll();
     this.arranger = new Arranger();
+    this.synthEditor = new SynthEditor();
 
     this.buildLayout();
     this.wireEvents();
@@ -64,6 +67,7 @@ export class App {
     this.pianoRoll.element.style.display = 'none';
 
     mainArea.appendChild(this.sequencerArea);
+    mainArea.appendChild(this.synthEditor.element);
     this.element.appendChild(mainArea);
 
     // Arranger at the bottom
@@ -121,6 +125,34 @@ export class App {
       this.openPianoRoll(trackId);
     });
 
+    this.trackPanel.onSynthOpen = (trackId) => {
+      const pattern = this.song.getCurrentPattern();
+      const track = pattern.tracks.find(t => t.id === trackId);
+      if (!track) return;
+      this.synthEditor.setTrack(track);
+      this.synthEditor.show();
+    };
+
+    this.synthEditor.onParamChange = (trackId, key, value) => {
+      const pattern = this.song.getCurrentPattern();
+      this.song.setSynthParam(pattern.id, trackId, key, value);
+    };
+
+    this.transport.onSave = () => {
+      const json = this.song.serialize();
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'beatcomposer-song.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    this.transport.onLoad = (json) => {
+      this.song.loadFromJSON(json);
+    };
+
     // Step grid
     this.stepGrid.onStepClick((trackId, stepIndex) => {
       const pattern = this.song.getCurrentPattern();
@@ -170,6 +202,20 @@ export class App {
     });
     this.song.on('bpmChange', (bpm) => {
       this.transport.setBpm(bpm as number);
+    });
+
+    this.song.on('fullReset', () => {
+      this.pianoRollVisible = false;
+      this.activeTrackId = null;
+      this.pianoRoll.element.style.display = 'none';
+      this.stepGrid.element.style.display = 'block';
+      this.synthEditor.hide();
+      this.refreshAll();
+    });
+
+    this.song.on('scaleChange', (data) => {
+      const { key, scale } = data as { key: number; scale: string };
+      if (this.pianoRoll.setScale) this.pianoRoll.setScale(key, scale);
     });
   }
 
