@@ -28,7 +28,8 @@ export class LeadSynth {
     duration: number,
     reverbSend: number,
     delaySend: number,
-    p: LeadParams
+    p: LeadParams,
+    outputNode?: AudioNode
   ): void {
     const freq = this.midiToFreq(pitch);
     const releaseTime = p.release;
@@ -42,9 +43,10 @@ export class LeadSynth {
     }
 
     // Master output gain
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    masterGain.connect(this.destination);
+    masterGain.connect(dest);
 
     if (reverbSend > 0) {
       const rv = this.ctx.createGain();

@@ -35,16 +35,18 @@ export class BassSynth {
     duration: number,
     reverbSend: number,
     delaySend: number,
-    p: BassParams
+    p: BassParams,
+    outputNode?: AudioNode
   ): void {
     const freq = this.midiToFreq(pitch);
     const releaseTime = p.release;
     const endTime = time + duration + releaseTime;
 
     // Master output gain
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    masterGain.connect(this.destination);
+    masterGain.connect(dest);
 
     if (reverbSend > 0) {
       const rv = this.ctx.createGain();

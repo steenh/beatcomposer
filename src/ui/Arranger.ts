@@ -6,6 +6,11 @@ export class Arranger {
   private removeCallback?: (id: string) => void;
   private selectedSlotId: string | null = null;
 
+  onReorder?: (fromIndex: number, toIndex: number) => void;
+  onBarsChange?: (slotId: string, bars: number) => void;
+
+  private dragFromIndex = -1;
+
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'arranger';
@@ -63,22 +68,66 @@ export class Arranger {
       empty.textContent = 'No arrangement yet. Add patterns using the + button above.';
       slotsContainer.appendChild(empty);
     } else {
-      for (const slot of slots) {
+      slots.forEach((slot, index) => {
         const pattern = patterns.find(p => p.id === slot.patternId);
         const slotEl = document.createElement('div');
         slotEl.className = 'arranger-slot';
         slotEl.classList.toggle('selected', slot.id === this.selectedSlotId);
         slotEl.dataset.slotId = slot.id;
+        slotEl.dataset.index = String(index);
+
+        slotEl.draggable = true;
+
+        slotEl.addEventListener('dragstart', (e) => {
+          this.dragFromIndex = index;
+          e.dataTransfer!.effectAllowed = 'move';
+          slotEl.classList.add('dragging');
+        });
+        slotEl.addEventListener('dragend', () => {
+          slotEl.classList.remove('dragging');
+          this.element.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+        slotEl.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer!.dropEffect = 'move';
+          slotEl.classList.add('drag-over');
+        });
+        slotEl.addEventListener('dragleave', () => {
+          slotEl.classList.remove('drag-over');
+        });
+        slotEl.addEventListener('drop', (e) => {
+          e.preventDefault();
+          slotEl.classList.remove('drag-over');
+          const toIndex = parseInt(slotEl.dataset.index!, 10);
+          if (this.dragFromIndex !== -1 && this.dragFromIndex !== toIndex) {
+            this.onReorder?.(this.dragFromIndex, toIndex);
+          }
+          this.dragFromIndex = -1;
+        });
 
         const patternName = document.createElement('span');
         patternName.className = 'slot-pattern-name';
         patternName.textContent = pattern?.name ?? 'Unknown';
         slotEl.appendChild(patternName);
 
-        const barsLabel = document.createElement('span');
-        barsLabel.className = 'slot-bars';
-        barsLabel.textContent = `×${slot.bars}`;
-        slotEl.appendChild(barsLabel);
+        // Bars input (replaces static span)
+        const barsInput = document.createElement('input');
+        barsInput.type = 'number';
+        barsInput.min = '1';
+        barsInput.max = '64';
+        barsInput.value = String(slot.bars);
+        barsInput.className = 'slot-bars-input';
+        barsInput.title = 'Number of times to repeat';
+        const commitBars = () => {
+          const val = parseInt(barsInput.value, 10);
+          if (!isNaN(val)) this.onBarsChange?.(slot.id, val);
+        };
+        barsInput.addEventListener('blur', commitBars);
+        barsInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { commitBars(); barsInput.blur(); }
+          e.stopPropagation(); // prevent delete key from removing slot
+        });
+        slotEl.appendChild(barsInput);
 
         const removeBtn = document.createElement('button');
         removeBtn.className = 'slot-remove-btn';
@@ -98,7 +147,7 @@ export class Arranger {
         });
 
         slotsContainer.appendChild(slotEl);
-      }
+      });
     }
 
     this.element.appendChild(slotsContainer);

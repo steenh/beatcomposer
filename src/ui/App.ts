@@ -1,7 +1,7 @@
 import type { Song } from '../sequencer/Song';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { Scheduler } from '../audio/Scheduler';
-import type { Track, PianoRollNote } from '../sequencer/types';
+import type { Track, PianoRollNote, TrackType, TrackFX } from '../sequencer/types';
 import { TransportBar } from './TransportBar';
 import { PatternSelector } from './PatternSelector';
 import { TrackPanel } from './TrackPanel';
@@ -9,6 +9,7 @@ import { StepGrid } from './StepGrid';
 import { PianoRoll } from './PianoRoll';
 import { Arranger } from './Arranger';
 import { SynthEditor } from './SynthEditor';
+import { MIDIInput } from '../midi/MIDIInput';
 
 export class App {
   element: HTMLElement;
@@ -23,6 +24,7 @@ export class App {
   private pianoRollVisible = false;
   private activeTrackId: string | null = null;
   private audioInitialized = false;
+  private midiInput = new MIDIInput();
 
   constructor(
     private song: Song,
@@ -138,6 +140,18 @@ export class App {
       this.song.setSynthParam(pattern.id, trackId, key, value);
     };
 
+    this.synthEditor.onFXChange = (trackId, key, value) => {
+      const pattern = this.song.getCurrentPattern();
+      this.song.setTrackFX(pattern.id, trackId, key, value);
+    };
+
+    this.song.on('fxChange', (data) => {
+      const { trackType, fx } = data as { trackType: TrackType; fx: TrackFX };
+      if (this.audio.isInitialized) {
+        this.audio.updateTrackFX(trackType, fx, this.song.data.bpm);
+      }
+    });
+
     this.transport.onSave = () => {
       const json = this.song.serialize();
       const blob = new Blob([json], { type: 'application/json' });
@@ -163,6 +177,13 @@ export class App {
       }
     });
 
+    this.stepGrid.onVelocityChange = (trackId, stepIndex, velocity) => {
+      const pattern = this.song.getCurrentPattern();
+      this.song.setStepVelocity(pattern.id, trackId, stepIndex, velocity);
+      const track = pattern.tracks.find(t => t.id === trackId);
+      if (track) this.stepGrid.updateTrackSteps(track);
+    };
+
     // Piano roll
     this.pianoRoll.onNotesChange((notes) => {
       if (!this.activeTrackId) return;
@@ -184,6 +205,14 @@ export class App {
       this.song.removeArrangementSlot(id);
       this.refreshArranger();
     });
+    this.arranger.onReorder = (from, to) => {
+      this.song.reorderArrangement(from, to);
+      this.refreshArranger();
+    };
+    this.arranger.onBarsChange = (slotId, bars) => {
+      this.song.setArrangementBars(slotId, bars);
+      // No need to refresh - input already shows new value
+    };
 
     // Scheduler step callback
     this.scheduler.onStep = (step, _time) => {
@@ -217,6 +246,21 @@ export class App {
       const { key, scale } = data as { key: number; scale: string };
       if (this.pianoRoll.setScale) this.pianoRoll.setScale(key, scale);
     });
+
+    // Undo/Redo keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if ((e.target as HTMLElement).isContentEditable) return;
+      if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        this.song.undo();
+      }
+      if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        e.preventDefault();
+        this.song.redo();
+      }
+    });
   }
 
   private async handlePlay(): Promise<void> {
@@ -224,6 +268,17 @@ export class App {
       await this.audio.init();
       this.audioInitialized = true;
     }
+
+    if (!this.midiInput.isInitialized) {
+      await this.midiInput.init();
+      this.midiInput.setNoteOnHandler((pitch, velocity) => {
+        if (!this.audio.isInitialized) return;
+        const pattern = this.song.getCurrentPattern();
+        const track = pattern.tracks.find(t => t.id === this.activeTrackId) ?? pattern.tracks[0];
+        this.audio.previewNote(track, pitch, velocity);
+      });
+    }
+
     if (this.scheduler.playing) {
       this.scheduler.stop();
       this.transport.setPlaying(false);

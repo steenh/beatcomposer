@@ -13,6 +13,7 @@ interface ParamDef {
 export class SynthEditor {
   element: HTMLElement;
   onParamChange?: (trackId: string, key: string, value: number | string) => void;
+  onFXChange?: (trackId: string, key: string, value: number | string | boolean) => void;
   currentTrackId: string | null = null;
 
   constructor() {
@@ -153,6 +154,153 @@ export class SynthEditor {
         row.appendChild(select);
       }
 
+      body.appendChild(row);
+    }
+
+    // FX Section separator
+    const fxSep = document.createElement('div');
+    fxSep.className = 'synth-section-title';
+    fxSep.textContent = '── FX ──';
+    body.appendChild(fxSep);
+
+    const fx = (track.fx as unknown as Record<string, unknown>);
+    const fxDefs = [
+      // Filter
+      { key: 'filterEnabled', label: 'Filter ON', type: 'toggle' as const },
+      { key: 'filterType', label: 'Filter Type', type: 'select' as const, options: ['lowpass', 'highpass', 'bandpass'] },
+      { key: 'filterCutoff', label: 'Cutoff', type: 'range' as const, min: 20, max: 20000, step: 10 },
+      { key: 'filterResonance', label: 'Resonance', type: 'range' as const, min: 0, max: 20, step: 0.1 },
+      // Distortion
+      { key: 'distortionEnabled', label: 'Dist ON', type: 'toggle' as const },
+      { key: 'distortionAmount', label: 'Distortion', type: 'range' as const, min: 0, max: 200, step: 1 },
+      // Bitcrusher
+      { key: 'bitcrusherEnabled', label: 'Crush ON', type: 'toggle' as const },
+      { key: 'bitcrusherBits', label: 'Bits', type: 'range' as const, min: 1, max: 16, step: 1 },
+    ];
+
+    for (const def of fxDefs) {
+      const row = document.createElement('div');
+      row.className = 'synth-param-row';
+      row.innerHTML = `<label class="synth-param-label">${def.label}</label>`;
+
+      if (def.type === 'toggle') {
+        const btn = document.createElement('button');
+        const isOn = fx[def.key] as boolean;
+        btn.className = 'btn-fx-toggle' + (isOn ? ' active' : '');
+        btn.textContent = isOn ? 'ON' : 'OFF';
+        btn.addEventListener('click', () => {
+          const newVal = !(fx[def.key] as boolean);
+          fx[def.key] = newVal;
+          btn.classList.toggle('active', newVal);
+          btn.textContent = newVal ? 'ON' : 'OFF';
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, newVal);
+        });
+        row.appendChild(btn);
+      } else if (def.type === 'select') {
+        const val = fx[def.key] as string;
+        const sel = document.createElement('select');
+        sel.className = 'synth-select';
+        for (const opt of (def as { options: string[] }).options) {
+          const o = document.createElement('option');
+          o.value = opt; o.textContent = opt;
+          if (opt === val) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', () => {
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, sel.value);
+        });
+        row.appendChild(sel);
+      } else if (def.type === 'range') {
+        const val = fx[def.key] as number;
+        const d = def as { min: number; max: number; step: number };
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = String(d.min); slider.max = String(d.max); slider.step = String(d.step);
+        slider.value = String(val);
+        slider.className = 'synth-slider';
+        const display = document.createElement('span');
+        display.className = 'synth-param-value';
+        display.textContent = String(val);
+        slider.addEventListener('input', () => {
+          const n = parseFloat(slider.value);
+          display.textContent = String(n);
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, n);
+        });
+        row.appendChild(slider);
+        row.appendChild(display);
+      }
+
+      body.appendChild(row);
+    }
+
+    // LFO Section
+    const lfoSep = document.createElement('div');
+    lfoSep.className = 'synth-section-title';
+    lfoSep.textContent = '── LFO ──';
+    body.appendChild(lfoSep);
+
+    const lfoFx = track.fx.lfo as unknown as Record<string, unknown>;
+    const lfoDefs = [
+      { key: 'lfo.enabled', label: 'LFO ON', type: 'toggle' as const },
+      { key: 'lfo.target', label: 'Target', type: 'select' as const, options: ['filterCutoff', 'volume', 'pitch'] },
+      { key: 'lfo.shape', label: 'Shape', type: 'select' as const, options: ['sine', 'triangle', 'sawtooth', 'square'] },
+      { key: 'lfo.rate', label: 'Rate', type: 'range' as const, min: 0.1, max: 20, step: 0.1 },
+      { key: 'lfo.depth', label: 'Depth', type: 'range' as const, min: 0, max: 1, step: 0.01 },
+      { key: 'lfo.sync', label: 'BPM Sync', type: 'toggle' as const },
+    ];
+
+    for (const def of lfoDefs) {
+      const lfoKey = def.key.startsWith('lfo.') ? def.key.slice(4) : def.key;
+      const row = document.createElement('div');
+      row.className = 'synth-param-row';
+      row.innerHTML = `<label class="synth-param-label">${def.label}</label>`;
+
+      if (def.type === 'toggle') {
+        const btn = document.createElement('button');
+        const isOn = lfoFx[lfoKey] as boolean;
+        btn.className = 'btn-fx-toggle' + (isOn ? ' active' : '');
+        btn.textContent = isOn ? 'ON' : 'OFF';
+        btn.addEventListener('click', () => {
+          const newVal = !(lfoFx[lfoKey] as boolean);
+          lfoFx[lfoKey] = newVal;
+          btn.classList.toggle('active', newVal);
+          btn.textContent = newVal ? 'ON' : 'OFF';
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, newVal);
+        });
+        row.appendChild(btn);
+      } else if (def.type === 'select') {
+        const val = lfoFx[lfoKey] as string;
+        const sel = document.createElement('select');
+        sel.className = 'synth-select';
+        for (const opt of (def as { options: string[] }).options) {
+          const o = document.createElement('option');
+          o.value = opt; o.textContent = opt;
+          if (opt === val) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', () => {
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, sel.value);
+        });
+        row.appendChild(sel);
+      } else if (def.type === 'range') {
+        const val = lfoFx[lfoKey] as number;
+        const d = def as { min: number; max: number; step: number };
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = String(d.min); slider.max = String(d.max); slider.step = String(d.step);
+        slider.value = String(val);
+        slider.className = 'synth-slider';
+        const display = document.createElement('span');
+        display.className = 'synth-param-value';
+        display.textContent = String(val);
+        slider.addEventListener('input', () => {
+          const n = parseFloat(slider.value);
+          display.textContent = String(n);
+          if (this.currentTrackId) this.onFXChange?.(this.currentTrackId, def.key, n);
+        });
+        row.appendChild(slider);
+        row.appendChild(display);
+      }
       body.appendChild(row);
     }
   }

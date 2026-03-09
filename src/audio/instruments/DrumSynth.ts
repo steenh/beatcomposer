@@ -26,9 +26,10 @@ export class DrumSynth {
   private connectWithSends(
     source: AudioNode,
     reverbSend: number,
-    delaySend: number
+    delaySend: number,
+    dest: AudioNode
   ): void {
-    source.connect(this.destination);
+    source.connect(dest);
     if (reverbSend > 0) {
       const reverbGain = this.ctx.createGain();
       reverbGain.gain.value = reverbSend;
@@ -43,10 +44,11 @@ export class DrumSynth {
     }
   }
 
-  triggerKick(time: number, velocity: number, reverbSend: number, delaySend: number, p: KickParams): void {
+  triggerKick(time: number, velocity: number, reverbSend: number, delaySend: number, p: KickParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     // Sine oscillator with pitch envelope
     const osc = this.ctx.createOscillator();
@@ -83,10 +85,11 @@ export class DrumSynth {
     clickSource.stop(time + 0.02);
   }
 
-  triggerSnare(time: number, velocity: number, reverbSend: number, delaySend: number, p: SnareParams): void {
+  triggerSnare(time: number, velocity: number, reverbSend: number, delaySend: number, p: SnareParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     // Sine component
     const osc = this.ctx.createOscillator();
@@ -123,10 +126,11 @@ export class DrumSynth {
     noiseSource.stop(time + p.noiseDecay);
   }
 
-  triggerClap(time: number, velocity: number, reverbSend: number, delaySend: number, p: ClapParams): void {
+  triggerClap(time: number, velocity: number, reverbSend: number, delaySend: number, p: ClapParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     // 3 layered noise bursts
     for (let i = 0; i < 3; i++) {
@@ -153,10 +157,11 @@ export class DrumSynth {
     }
   }
 
-  triggerHihatClosed(time: number, velocity: number, reverbSend: number, delaySend: number, p: HihatClosedParams): void {
+  triggerHihatClosed(time: number, velocity: number, reverbSend: number, delaySend: number, p: HihatClosedParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     const noiseBuffer = this.createNoise(p.decay);
     const noiseSource = this.ctx.createBufferSource();
@@ -177,10 +182,11 @@ export class DrumSynth {
     noiseSource.stop(time + p.decay);
   }
 
-  triggerHihatOpen(time: number, velocity: number, reverbSend: number, delaySend: number, p: HihatOpenParams): void {
+  triggerHihatOpen(time: number, velocity: number, reverbSend: number, delaySend: number, p: HihatOpenParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     const noiseBuffer = this.createNoise(p.decay);
     const noiseSource = this.ctx.createBufferSource();
@@ -201,10 +207,11 @@ export class DrumSynth {
     noiseSource.stop(time + p.decay);
   }
 
-  triggerCymbal(time: number, velocity: number, reverbSend: number, delaySend: number, p: CymbalParams): void {
+  triggerCymbal(time: number, velocity: number, reverbSend: number, delaySend: number, p: CymbalParams, outputNode?: AudioNode): void {
+    const dest = outputNode ?? this.destination;
     const masterGain = this.ctx.createGain();
     masterGain.gain.value = p.gain * velocity;
-    this.connectWithSends(masterGain, reverbSend, delaySend);
+    this.connectWithSends(masterGain, reverbSend, delaySend, dest);
 
     const noiseBuffer = this.createNoise(p.decay);
     const noiseSource = this.ctx.createBufferSource();

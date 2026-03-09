@@ -1,4 +1,4 @@
-import type { Song as SongData, Pattern, Track, PianoRollNote, Step, ArrangementSlot, SynthParams } from './types';
+import type { Song as SongData, Pattern, Track, PianoRollNote, Step, ArrangementSlot, SynthParams, TrackFX } from './types';
 import type { TrackType } from './types';
 
 function generateId(): string {
@@ -7,6 +7,28 @@ function generateId(): string {
 
 function makeStep(active = false, velocity = 100): Step {
   return { active, velocity };
+}
+
+function defaultFX(): TrackFX {
+  return {
+    filterEnabled: false,
+    filterType: 'lowpass',
+    filterCutoff: 20000,
+    filterResonance: 0,
+    distortionEnabled: false,
+    distortionAmount: 0,
+    bitcrusherEnabled: false,
+    bitcrusherBits: 16,
+    bitcrusherRate: 1.0,
+    lfo: {
+      enabled: false,
+      shape: 'sine',
+      rate: 1,
+      depth: 0.5,
+      target: 'filterCutoff',
+      sync: false,
+    },
+  };
 }
 
 function defaultSynthParams(type: TrackType): SynthParams {
@@ -37,6 +59,7 @@ function makeTrack(type: TrackType, name: string, stepCount = 16): Track {
     reverbSend: type === 'pad' ? 0.6 : type === 'lead' ? 0.3 : 0.1,
     delaySend: type === 'lead' ? 0.3 : type === 'bass' ? 0.1 : 0.0,
     synthParams: defaultSynthParams(type),
+    fx: defaultFX(),
   };
 }
 
@@ -82,6 +105,8 @@ type EventCallback = (data?: unknown) => void;
 export class Song {
   data: SongData;
   private listeners: Map<string, Set<EventCallback>> = new Map();
+  private undoStack: string[] = [];
+  private redoStack: string[] = [];
 
   constructor() {
     const patterns: Pattern[] = Array.from({ length: 8 }, (_, i) => makeDefaultPattern(i));
@@ -93,6 +118,26 @@ export class Song {
       key: 0,
       scale: 'natural minor',
     };
+  }
+
+  private snapshot(): void {
+    this.undoStack.push(JSON.stringify(this.data));
+    if (this.undoStack.length > 50) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  undo(): void {
+    if (!this.undoStack.length) return;
+    this.redoStack.push(JSON.stringify(this.data));
+    this.data = JSON.parse(this.undoStack.pop()!);
+    this.emit('fullReset', null);
+  }
+
+  redo(): void {
+    if (!this.redoStack.length) return;
+    this.undoStack.push(JSON.stringify(this.data));
+    this.data = JSON.parse(this.redoStack.pop()!);
+    this.emit('fullReset', null);
   }
 
   getCurrentPattern(): Pattern {
@@ -118,6 +163,7 @@ export class Song {
   }
 
   toggleStep(patternId: string, trackId: string, stepIndex: number): void {
+    this.snapshot();
     const track = this.findTrack(patternId, trackId);
     const step = track.steps[stepIndex];
     if (step) {
@@ -136,18 +182,21 @@ export class Song {
   }
 
   addNote(patternId: string, trackId: string, note: PianoRollNote): void {
+    this.snapshot();
     const track = this.findTrack(patternId, trackId);
     track.notes.push(note);
     this.emit('notesChange', { patternId, trackId, notes: track.notes });
   }
 
   removeNote(patternId: string, trackId: string, noteId: string): void {
+    this.snapshot();
     const track = this.findTrack(patternId, trackId);
     track.notes = track.notes.filter(n => n.id !== noteId);
     this.emit('notesChange', { patternId, trackId, notes: track.notes });
   }
 
   updateNote(patternId: string, trackId: string, note: PianoRollNote): void {
+    this.snapshot();
     const track = this.findTrack(patternId, trackId);
     const idx = track.notes.findIndex(n => n.id === note.id);
     if (idx >= 0) {
@@ -212,6 +261,7 @@ export class Song {
   }
 
   addArrangementSlot(patternId: string): void {
+    this.snapshot();
     const slot: ArrangementSlot = {
       id: generateId(),
       patternId,
@@ -222,15 +272,46 @@ export class Song {
   }
 
   removeArrangementSlot(id: string): void {
+    this.snapshot();
     this.data.arrangement = this.data.arrangement.filter(s => s.id !== id);
     this.emit('arrangementChange', this.data.arrangement);
   }
 
   setSynthParam(patternId: string, trackId: string, key: string, value: number | string): void {
+    this.snapshot();
     const track = this.getPattern(patternId).tracks.find(t => t.id === trackId);
     if (!track) return;
     (track.synthParams as unknown as Record<string, number | string>)[key] = value;
     this.emit('paramChange', { patternId, trackId, key, value });
+  }
+
+  setTrackFX(patternId: string, trackId: string, key: string, value: unknown): void {
+    this.snapshot();
+    const track = this.getPattern(patternId).tracks.find(t => t.id === trackId);
+    if (!track) return;
+    // Support nested keys like 'lfo.rate'
+    const parts = key.split('.');
+    if (parts.length === 2 && parts[0] === 'lfo') {
+      (track.fx.lfo as unknown as Record<string, unknown>)[parts[1]] = value;
+    } else {
+      (track.fx as unknown as Record<string, unknown>)[key] = value;
+    }
+    this.emit('fxChange', { patternId, trackId, trackType: track.type, fx: track.fx });
+  }
+
+  reorderArrangement(fromIndex: number, toIndex: number): void {
+    const arr = this.data.arrangement;
+    if (fromIndex < 0 || fromIndex >= arr.length || toIndex < 0 || toIndex >= arr.length) return;
+    const [item] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, item);
+    this.emit('arrangementChange', this.data.arrangement);
+  }
+
+  setArrangementBars(slotId: string, bars: number): void {
+    const slot = this.data.arrangement.find(s => s.id === slotId);
+    if (!slot) return;
+    slot.bars = Math.max(1, Math.min(64, Math.round(bars)));
+    this.emit('arrangementChange', this.data.arrangement);
   }
 
   setKey(key: number): void {

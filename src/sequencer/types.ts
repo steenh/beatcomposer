@@ -15,6 +15,31 @@ export type TrackType = 'kick' | 'snare' | 'clap' | 'hihat-closed' | 'hihat-open
 
 export type OscType = 'sawtooth' | 'square' | 'triangle' | 'sine';
 
+export type LFOShape = 'sine' | 'triangle' | 'sawtooth' | 'square';
+export type LFOTarget = 'filterCutoff' | 'volume' | 'pitch';
+
+export interface LFOConfig {
+  enabled: boolean;
+  shape: LFOShape;
+  rate: number;
+  depth: number;
+  target: LFOTarget;
+  sync: boolean;
+}
+
+export interface TrackFX {
+  filterEnabled: boolean;
+  filterType: 'lowpass' | 'highpass' | 'bandpass';
+  filterCutoff: number;
+  filterResonance: number;
+  distortionEnabled: boolean;
+  distortionAmount: number;
+  bitcrusherEnabled: boolean;
+  bitcrusherBits: number;
+  bitcrusherRate: number;
+  lfo: LFOConfig;
+}
+
 export interface KickParams {
   startFreq: number;    // 180
   endFreq: number;      // 40
@@ -121,6 +146,7 @@ export interface Track {
   reverbSend: number; // 0-1
   delaySend: number;  // 0-1
   synthParams: SynthParams;
+  fx: TrackFX;
 }
 
 export interface Pattern {

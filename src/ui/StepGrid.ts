@@ -19,9 +19,25 @@ export class StepGrid {
   private stepClickCallback?: (trackId: string, stepIndex: number) => void;
   private pattern: Pattern | null = null;
 
+  onVelocityChange?: (trackId: string, stepIndex: number, velocity: number) => void;
+
+  private velDragging = false;
+  private velDragStartY = 0;
+  private velDragStartVelocity = 0;
+  private velDragTrackId = '';
+  private velDragStepIndex = 0;
+
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'step-grid-wrapper';
+
+    document.addEventListener('mousemove', (e) => {
+      if (!this.velDragging) return;
+      const delta = this.velDragStartY - e.clientY;
+      const newVel = Math.max(1, Math.min(127, this.velDragStartVelocity + delta));
+      this.onVelocityChange?.(this.velDragTrackId, this.velDragStepIndex, Math.round(newVel));
+    });
+    document.addEventListener('mouseup', () => { this.velDragging = false; });
   }
 
   setPattern(pattern: Pattern): void {
@@ -49,6 +65,7 @@ export class StepGrid {
 
     for (const track of pattern.tracks) {
       const buttons: HTMLButtonElement[] = [];
+      const color = TRACK_COLORS[track.type] || '#e2e8f0';
 
       for (let i = 0; i < pattern.stepCount; i++) {
         const btn = document.createElement('button');
@@ -57,11 +74,19 @@ export class StepGrid {
         const step = track.steps[i];
         if (step?.active) {
           btn.classList.add('active');
-          btn.style.setProperty('--step-color', TRACK_COLORS[track.type] || '#e2e8f0');
+          btn.style.setProperty('--step-color', color);
         }
 
         if (i % 4 === 0) btn.classList.add('beat-start');
         if (i % 2 === 0) btn.classList.add('even-step');
+
+        // Velocity bar
+        const velBar = document.createElement('div');
+        velBar.className = 'velocity-bar';
+        velBar.style.height = (step.velocity / 127 * 100) + '%';
+        velBar.style.color = color;
+        btn.appendChild(velBar);
+        (btn as unknown as Record<string, unknown>)['_velBar'] = velBar;
 
         const trackId = track.id;
         const stepIndex = i;
@@ -69,10 +94,14 @@ export class StepGrid {
           this.stepClickCallback?.(trackId, stepIndex);
         });
 
-        // Right-click for velocity
         btn.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          // Could open velocity editor - for now just toggle
+          if (!step.active) return; // only drag on active steps
+          this.velDragging = true;
+          this.velDragStartY = e.clientY;
+          this.velDragStartVelocity = step.velocity;
+          this.velDragTrackId = track.id;
+          this.velDragStepIndex = stepIndex;
         });
 
         grid.appendChild(btn);
@@ -93,6 +122,7 @@ export class StepGrid {
   updateTrackSteps(track: Track): void {
     const buttons = this.stepButtons.get(track.id);
     if (!buttons) return;
+    const color = TRACK_COLORS[track.type] || '#e2e8f0';
     for (let i = 0; i < buttons.length; i++) {
       const btn = buttons[i];
       const step = track.steps[i];
@@ -102,9 +132,15 @@ export class StepGrid {
       if (i % 2 === 0) btn.classList.add('even-step');
       if (step?.active) {
         btn.classList.add('active');
-        btn.style.setProperty('--step-color', TRACK_COLORS[track.type] || '#e2e8f0');
+        btn.style.setProperty('--step-color', color);
       }
       if (wasPlayhead) btn.classList.add('playhead');
+
+      // Update velocity bar height
+      const velBar = (btn as unknown as Record<string, unknown>)['_velBar'] as HTMLDivElement | undefined;
+      if (velBar && step) {
+        velBar.style.height = (step.velocity / 127 * 100) + '%';
+      }
     }
   }
 
